@@ -1,32 +1,60 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <style>
-    body { font-family: 'Segoe UI', sans-serif; width: 380px; margin: 0; padding: 15px; background: #f4f7f9; }
-    h2 { color: #0070f2; margin: 0 0 15px 0; font-size: 1.1rem; border-bottom: 2px solid #0070f2; padding-bottom: 5px; }
-    button { 
-      width: 100%; padding: 10px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; transition: 0.2s;
-    }
-    #analyzeBtn { background-color: #0070f2; color: white; margin-bottom: 10px; }
-    #analyzeBtn:hover { background-color: #005cc2; }
-    #copyBtn { background-color: #e0e0e0; color: #333; display: none; margin-top: 10px; }
-    #copyBtn:hover { background-color: #d0d0d0; }
-    .card { background: white; border: 1px solid #ced4da; padding: 12px; border-radius: 6px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-    pre { font-size: 12px; white-space: pre-wrap; word-wrap: break-word; margin: 0; color: #333; max-height: 400px; overflow-y: auto; }
-    .debug-on { color: #d32f2f; font-weight: bold; }
-  </style>
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <h2>SAPUI5 Quick Analyzer</h2>
-  <button id="analyzeBtn">ANALIZZA APP</button>
-  
-  <div class="card">
-    <pre id="result">In attesa di analisi...</pre>
+  <!-- Header -->
+  <div class="header">
+    <img src="icons/icon48.png" class="header-logo" alt="logo">
+    <span class="header-title">SAPUI5 Explorer</span>
+    <span class="header-version" id="ui5Version" hidden></span>
   </div>
 
-  <button id="copyBtn">COPIA JSON</button>
+  <!-- Analyze Bar -->
+  <div class="analyze-bar">
+    <button id="analyzeBtn">ANALYZE</button>
+  </div>
 
+  <!-- Error Banner (hidden by default) -->
+  <div class="error-banner" id="errorBanner">
+    <span>&#9888;</span>
+    <span id="errorBannerText"></span>
+  </div>
+  <div class="error-banner-details" id="errorBannerDetails"></div>
+
+  <!-- Tab Bar -->
+  <nav class="tab-bar" id="tabBar">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="components">Components <span class="badge" id="badgeComponents" hidden></span></button>
+    <button class="tab-btn" data-tab="bindings">Bindings <span class="badge" id="badgeBindings" hidden></span></button>
+    <button class="tab-btn" data-tab="logs">Logs <span class="badge" id="badgeLogs" hidden></span></button>
+    <button class="tab-btn" data-tab="runtime">Runtime</button>
+    <button class="tab-btn" data-tab="json">JSON</button>
+  </nav>
+
+  <!-- Tab Content -->
+  <div id="tabContent">
+    <section class="tab-panel active" id="tab-overview">
+      <div class="placeholder">
+        <div class="placeholder-icon">&#128269;</div>
+        <div class="placeholder-text">Click <strong>ANALYZE</strong> to inspect the SAPUI5 app</div>
+      </div>
+    </section>
+    <section class="tab-panel" id="tab-components"></section>
+    <section class="tab-panel" id="tab-bindings"></section>
+    <section class="tab-panel" id="tab-logs"></section>
+    <section class="tab-panel" id="tab-runtime"></section>
+    <section class="tab-panel" id="tab-json">
+      <div class="json-container">
+        <pre class="json-output" id="jsonOutput">No data yet.</pre>
+        <button id="copyBtn">COPY JSON</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="content.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
