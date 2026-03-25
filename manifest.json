@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SAPUI5 Explorer",
-  "description": "Analyze SAPUI5/OpenUI5 applications: components, models, bindings, views, controllers, logs and runtime info. Compatible with UI5 1.x and 2.x.",
-  "version": "2.0",
+  "description": "Analyze SAPUI5/OpenUI5 applications: components, models, bindings, views, controllers, logs and runtime info.",
+  "version": "1.0",
   "permissions": ["scripting", "activeTab"],
   "host_permissions": ["<all_urls>"],
   "action": {
