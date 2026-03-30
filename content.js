@@ -169,9 +169,9 @@ function extractSAPUI5Data() {
     } catch (e) { /* ignore */ }
     // Common lifecycle/framework methods to always exclude
     ["constructor", "onInit", "onExit", "onBeforeRendering", "onAfterRendering",
-     "getView", "getOwnerComponent", "byId", "getRouter", "getModel", "setModel",
-     "getResourceBundle", "createId", "getMetadata", "init", "exit", "destroy",
-     "getEventBus", "attachEvent", "detachEvent", "fireEvent"
+      "getView", "getOwnerComponent", "byId", "getRouter", "getModel", "setModel",
+      "getResourceBundle", "createId", "getMetadata", "init", "exit", "destroy",
+      "getEventBus", "attachEvent", "detachEvent", "fireEvent"
     ].forEach(m => frameworkMethods.add(m));
 
     // Binding properties to check on each control
@@ -211,9 +211,9 @@ function extractSAPUI5Data() {
           if (proto) {
             Object.getOwnPropertyNames(proto).forEach(name => {
               if (name !== "constructor" &&
-                  typeof proto[name] === "function" &&
-                  !frameworkMethods.has(name) &&
-                  !name.startsWith("_")) {
+                typeof proto[name] === "function" &&
+                !frameworkMethods.has(name) &&
+                !name.startsWith("_")) {
                 customMethods.push(name);
               }
             });
@@ -286,12 +286,97 @@ function extractSAPUI5Data() {
       for (const modelName in oModels) {
         const m = oModels[modelName];
         try {
+          const typeName = m.getMetadata().getName();
+          const serviceUrl = typeof m.getServiceUrl === "function" ? m.getServiceUrl() : null;
+
+          // Detect OData version
+          let odataVersion = null;
+          if (typeName.includes(".v4.")) odataVersion = "v4";
+          else if (typeName.includes(".v2.")) odataVersion = "v2";
+          else if (/odata/i.test(typeName)) odataVersion = "v1";
+
+          // Extract OData metadata details
+          let metadataLoaded = false;
+          let entityTypes = [];
+          let entitySets = [];
+          let functionImports = [];
+
+          if (odataVersion === "v2" && typeof m.getServiceMetadata === "function") {
+            try {
+              const meta = m.getServiceMetadata();
+              if (meta) {
+                metadataLoaded = true;
+                const schema = meta.dataServices?.schema?.[0] || {};
+                const container = schema.entityContainer?.[0] || {};
+                entityTypes = (schema.entityType || []).slice(0, 100).map(et => {
+                  const keySet = new Set((et.key?.propertyRef || []).map(p => p.name));
+                  return {
+                    name: et.name,
+                    properties: (et.property || []).map(p => ({
+                      name: p.name, type: p.type, isKey: keySet.has(p.name)
+                    })),
+                    navProperties: (et.navigationProperty || []).map(n => ({ name: n.name }))
+                  };
+                });
+                entitySets = (container.entitySet || []).map(es => ({
+                  name: es.name,
+                  entityType: es.entityType?.split(".").pop() || es.entityType
+                }));
+                functionImports = (container.functionImport || []).map(fi => ({
+                  name: fi.name,
+                  httpMethod: fi.httpMethod || fi["m:HttpMethod"] || "GET",
+                  returnType: fi.returnType || null
+                }));
+              }
+            } catch (e) { /* metadata extraction failed */ }
+          } else if (odataVersion === "v4" && typeof m.getMetaModel === "function") {
+            try {
+              const metaModel = m.getMetaModel();
+              if (metaModel && typeof metaModel.getObject === "function") {
+                const schemaObj = metaModel.getObject("/");
+                if (schemaObj) {
+                  metadataLoaded = true;
+                  const containerName = schemaObj["$EntityContainer"];
+                  if (containerName) {
+                    const container = schemaObj[containerName] || {};
+                    entitySets = Object.entries(container)
+                      .filter(([, v]) => v && v["$kind"] === "EntitySet")
+                      .map(([name, v]) => ({
+                        name: name,
+                        entityType: v["$Type"] ? v["$Type"].split(".").pop() : null
+                      }));
+                  }
+                  entityTypes = Object.entries(schemaObj)
+                    .filter(([, v]) => v && typeof v === "object" && v["$kind"] === "EntityType")
+                    .slice(0, 100)
+                    .map(([name, v]) => ({
+                      name: name.split(".").pop() || name,
+                      properties: Object.entries(v)
+                        .filter(([pk]) => !pk.startsWith("$"))
+                        .map(([pName, pDef]) => ({
+                          name: pName,
+                          type: pDef["$Type"] || "Edm.String",
+                          isKey: (v["$Key"] || []).includes(pName)
+                        })),
+                      navProperties: []
+                    }));
+                }
+              }
+            } catch (e) { /* v4 metadata extraction failed */ }
+          } else if (odataVersion === "v1" && typeof m.getServiceMetadata === "function") {
+            try { metadataLoaded = !!m.getServiceMetadata(); } catch (e) { /* skip */ }
+          }
+
           models.push({
             componentId: compId,
             name: modelName || "default",
-            type: m.getMetadata().getName(),
-            serviceUrl: typeof m.getServiceUrl === "function" ? m.getServiceUrl() : null,
-            serviceMetadata: typeof m.getServiceMetadata === "function" ? !!m.getServiceMetadata() : null
+            type: typeName,
+            serviceUrl,
+            odataVersion,
+            metadataLoaded,
+            entityTypes,
+            entitySets,
+            functionImports
           });
         } catch (e) { /* skip model */ }
       }

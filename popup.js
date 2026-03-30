@@ -77,6 +77,7 @@ async function runAnalysis() {
       // Render all tabs
       renderOverview(data);
       renderComponents(data);
+      renderOData(data);
       renderBindings(data);
       renderLogs(data);
       renderRuntime(data);
@@ -84,6 +85,8 @@ async function runAnalysis() {
 
       // Update badges
       setBadge("badgeComponents", (data.components || []).length);
+      const odataCount = [...new Set((data.models || []).filter(m => m.odataVersion).map(m => m.serviceUrl))].length;
+      setBadge("badgeOData", odataCount);
       setBadge("badgeBindings", (data.bindings || []).length);
       const logCount = (data.messages?.count || 0) + (data.logEntries || []).length;
       setBadge("badgeLogs", logCount, logCount > 0 ? "warning" : "");
@@ -233,6 +236,143 @@ function renderComponents(data) {
 
     html += card(esc(comp.id), body);
   });
+
+  el.innerHTML = html;
+}
+
+// --- Render: OData ---
+
+function renderOData(data) {
+  const el = document.getElementById("tab-odata");
+  const odataModels = (data.models || []).filter(m => m.odataVersion);
+
+  if (odataModels.length === 0) {
+    el.innerHTML = placeholder("&#128209;", "No OData services found");
+    return;
+  }
+
+  // Group by serviceUrl
+  const byUrl = {};
+  odataModels.forEach(m => {
+    const url = m.serviceUrl || "(no URL)";
+    if (!byUrl[url]) {
+      byUrl[url] = {
+        serviceUrl: m.serviceUrl,
+        odataVersion: m.odataVersion,
+        metadataLoaded: m.metadataLoaded,
+        entityTypes: m.entityTypes || [],
+        entitySets: m.entitySets || [],
+        functionImports: m.functionImports || [],
+        components: [],
+        modelNames: []
+      };
+    }
+    const svc = byUrl[url];
+    if (!svc.components.includes(m.componentId)) svc.components.push(m.componentId);
+    const displayName = m.name || "default";
+    if (!svc.modelNames.includes(displayName)) svc.modelNames.push(displayName);
+    // Take metadata from whichever model has it loaded
+    if (m.metadataLoaded && !svc.metadataLoaded) {
+      svc.metadataLoaded = true;
+      svc.entityTypes = m.entityTypes || [];
+      svc.entitySets = m.entitySets || [];
+      svc.functionImports = m.functionImports || [];
+    }
+  });
+
+  let html = "";
+
+  for (const url in byUrl) {
+    const svc = byUrl[url];
+    const versionLabel = svc.odataVersion ? svc.odataVersion.toUpperCase() : "?";
+    const metaDot = svc.metadataLoaded
+      ? `<span class="status-dot on"></span>`
+      : `<span class="status-dot off"></span>`;
+
+    const headerHtml = `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">
+      <span class="mono" style="font-size:10px;word-break:break-all;flex:1">${esc(svc.serviceUrl || "(no URL)")}</span>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+        <span class="badge primary">${esc(versionLabel)}</span>
+        ${metaDot}
+      </div>
+    </div>`;
+
+    let body = "";
+
+    if (svc.components.length > 0) {
+      body += kvRow("Components", `<span class="mono" style="font-size:10px">${svc.components.map(c => esc(shortType(c))).join(", ")}</span>`);
+    }
+    if (svc.modelNames.length > 0) {
+      body += kvRow("Model Names", svc.modelNames.map(n => `<span class="method-tag">${esc(n)}</span>`).join(""));
+    }
+
+    if (!svc.metadataLoaded) {
+      body += `<div style="margin-top:8px;font-size:11px;color:var(--text-light)">Metadata not loaded yet — analyze after the app has fully initialized.</div>`;
+    } else {
+      // Entity Types
+      if (svc.entityTypes.length > 0) {
+        body += collapsible(`Entity Types (${svc.entityTypes.length})`, () => {
+          let etHtml = "";
+          svc.entityTypes.forEach(et => {
+            const propCount = (et.properties || []).length;
+            etHtml += collapsible(`${esc(et.name)} (${propCount} prop${propCount !== 1 ? "s" : ""})`, () => {
+              if (!et.properties || et.properties.length === 0) return `<div style="font-size:11px;color:var(--text-light)">No properties</div>`;
+              let tHtml = `<div style="overflow-x:auto"><table class="data-table">
+                <thead><tr><th>Property</th><th>Type</th><th>Key</th></tr></thead><tbody>`;
+              et.properties.forEach(p => {
+                tHtml += `<tr>
+                  <td><strong>${esc(p.name)}</strong></td>
+                  <td class="mono" style="font-size:10px">${esc(p.type || "")}</td>
+                  <td style="text-align:center">${p.isKey ? "&#9679;" : ""}</td>
+                </tr>`;
+              });
+              tHtml += `</tbody></table></div>`;
+              if (et.navProperties && et.navProperties.length > 0) {
+                tHtml += `<div style="margin-top:4px;font-size:11px;color:var(--text-light)">Nav: ${et.navProperties.map(n => `<span class="method-tag">${esc(n.name)}</span>`).join("")}</div>`;
+              }
+              return tHtml;
+            });
+          });
+          return etHtml;
+        });
+      }
+
+      // Entity Sets
+      if (svc.entitySets.length > 0) {
+        body += collapsible(`Entity Sets (${svc.entitySets.length})`, () => {
+          return `<div style="overflow-x:auto"><table class="data-table">
+            <thead><tr><th>Entity Set</th><th>Entity Type</th></tr></thead>
+            <tbody>${svc.entitySets.map(es =>
+              `<tr><td><strong>${esc(es.name)}</strong></td><td class="mono" style="font-size:10px">${esc(es.entityType || "")}</td></tr>`
+            ).join("")}</tbody></table></div>`;
+        });
+      }
+
+      // Function Imports
+      if (svc.functionImports.length > 0) {
+        body += collapsible(`Function Imports (${svc.functionImports.length})`, () => {
+          return `<div style="overflow-x:auto"><table class="data-table">
+            <thead><tr><th>Name</th><th>Method</th><th>Return Type</th></tr></thead>
+            <tbody>${svc.functionImports.map(fi =>
+              `<tr>
+                <td><strong>${esc(fi.name)}</strong></td>
+                <td class="mono" style="font-size:10px">${esc(fi.httpMethod || "")}</td>
+                <td class="mono" style="font-size:10px">${esc(fi.returnType || "")}</td>
+              </tr>`
+            ).join("")}</tbody></table></div>`;
+        });
+      }
+
+      if (svc.entityTypes.length === 0 && svc.entitySets.length === 0 && svc.functionImports.length === 0) {
+        body += `<div style="margin-top:8px;font-size:11px;color:var(--text-light)">Metadata loaded but no schema details extracted.</div>`;
+      }
+    }
+
+    html += `<div class="card" style="margin-bottom:10px">
+      <div class="card-header">${headerHtml}</div>
+      <div class="card-body">${body}</div>
+    </div>`;
+  }
 
   el.innerHTML = html;
 }
