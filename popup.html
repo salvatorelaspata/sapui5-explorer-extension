@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <title>SAPUI5 Explorer</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -14,7 +15,7 @@
 
   <!-- Analyze Bar -->
   <div class="analyze-bar">
-    <button id="analyzeBtn">ANALYZE</button>
+    <button id="analyzeBtn" aria-label="Analyze current page">ANALYZE</button>
   </div>
 
   <!-- Error Banner (hidden by default) -->
@@ -25,33 +26,43 @@
   <div class="error-banner-details" id="errorBannerDetails"></div>
 
   <!-- Tab Bar -->
-  <nav class="tab-bar" id="tabBar">
-    <button class="tab-btn active" data-tab="overview">Overview</button>
-    <button class="tab-btn" data-tab="components">Components <span class="badge" id="badgeComponents" hidden></span></button>
-    <button class="tab-btn" data-tab="odata">OData <span class="badge" id="badgeOData" hidden></span></button>
-    <button class="tab-btn" data-tab="bindings">Bindings <span class="badge" id="badgeBindings" hidden></span></button>
-    <button class="tab-btn" data-tab="logs">Logs <span class="badge" id="badgeLogs" hidden></span></button>
-    <button class="tab-btn" data-tab="runtime">Runtime</button>
-    <button class="tab-btn" data-tab="json">JSON</button>
+  <nav class="tab-bar" id="tabBar" role="tablist">
+    <button class="tab-btn active" data-tab="overview" role="tab">Overview</button>
+    <button class="tab-btn" data-tab="components" role="tab">Components <span class="badge" id="badgeComponents" hidden></span></button>
+    <button class="tab-btn" data-tab="odata" role="tab">OData <span class="badge" id="badgeOData" hidden></span></button>
+    <button class="tab-btn" data-tab="bindings" role="tab">Bindings <span class="badge" id="badgeBindings" hidden></span></button>
+    <button class="tab-btn" data-tab="routing" role="tab">Routing <span class="badge" id="badgeRouting" hidden></span></button>
+    <button class="tab-btn" data-tab="manifest" role="tab">Manifest</button>
+    <button class="tab-btn" data-tab="logs" role="tab">Logs <span class="badge" id="badgeLogs" hidden></span></button>
+    <button class="tab-btn" data-tab="performance" role="tab">Perf</button>
+    <button class="tab-btn" data-tab="runtime" role="tab">Runtime</button>
+    <button class="tab-btn" data-tab="json" role="tab">JSON</button>
   </nav>
 
   <!-- Tab Content -->
   <div id="tabContent">
-    <section class="tab-panel active" id="tab-overview">
+    <section class="tab-panel active" id="tab-overview" role="tabpanel">
       <div class="placeholder">
         <div class="placeholder-icon">&#128269;</div>
         <div class="placeholder-text">Click <strong>ANALYZE</strong> to inspect the SAPUI5 app</div>
       </div>
     </section>
-    <section class="tab-panel" id="tab-components"></section>
-    <section class="tab-panel" id="tab-odata"></section>
-    <section class="tab-panel" id="tab-bindings"></section>
-    <section class="tab-panel" id="tab-logs"></section>
-    <section class="tab-panel" id="tab-runtime"></section>
-    <section class="tab-panel" id="tab-json">
+    <section class="tab-panel" id="tab-components" role="tabpanel"></section>
+    <section class="tab-panel" id="tab-odata" role="tabpanel"></section>
+    <section class="tab-panel" id="tab-bindings" role="tabpanel"></section>
+    <section class="tab-panel" id="tab-routing" role="tabpanel"></section>
+    <section class="tab-panel" id="tab-manifest" role="tabpanel"></section>
+    <section class="tab-panel" id="tab-logs" role="tabpanel"></section>
+    <section class="tab-panel" id="tab-performance" role="tabpanel"></section>
+    <section class="tab-panel" id="tab-runtime" role="tabpanel"></section>
+    <section class="tab-panel" id="tab-json" role="tabpanel">
       <div class="json-container">
         <pre class="json-output" id="jsonOutput">No data yet.</pre>
-        <button id="copyBtn">COPY JSON</button>
+        <div class="action-row">
+          <button id="copyBtn" class="secondary-btn">COPY JSON</button>
+          <button id="downloadJsonBtn" class="secondary-btn">DOWNLOAD JSON</button>
+          <button id="downloadHtmlBtn" class="secondary-btn">EXPORT HTML</button>
+        </div>
       </div>
     </section>
   </div>

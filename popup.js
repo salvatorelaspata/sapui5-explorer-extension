@@ -1,24 +1,60 @@
 /* SAPUI5 Explorer - UI Controller */
 
 let analysisData = null;
+let bindingFilter = "";
+let entityFilter = "";
+let logFilter = { level: 0, text: "" };
 
 // --- Init ---
 
 document.getElementById("analyzeBtn").addEventListener("click", runAnalysis);
 document.getElementById("copyBtn").addEventListener("click", copyJSON);
+document.getElementById("downloadJsonBtn").addEventListener("click", downloadJSON);
+document.getElementById("downloadHtmlBtn").addEventListener("click", downloadHTML);
 document.getElementById("tabBar").addEventListener("click", (e) => {
   const btn = e.target.closest(".tab-btn");
   if (btn) switchTab(btn.dataset.tab);
+});
+document.getElementById("tabBar").addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  const btns = [...document.querySelectorAll(".tab-btn")];
+  const idx = btns.findIndex(b => b.classList.contains("active"));
+  const next = e.key === "ArrowRight" ? (idx + 1) % btns.length : (idx - 1 + btns.length) % btns.length;
+  switchTab(btns[next].dataset.tab);
+  btns[next].focus();
 });
 document.getElementById("errorBanner").addEventListener("click", () => {
   document.getElementById("errorBannerDetails").classList.toggle("open");
 });
 
-// Collapsible sections - event delegation (inline onclick blocked by CSP)
+// Collapsible sections - event delegation
 document.getElementById("tabContent").addEventListener("click", (e) => {
   const header = e.target.closest(".collapsible-header");
   if (header) {
     header.parentElement.classList.toggle("open");
+  }
+});
+
+// Filter inputs - event delegation
+document.getElementById("tabContent").addEventListener("input", (e) => {
+  if (e.target.id === "bindingFilter") {
+    bindingFilter = e.target.value.toLowerCase();
+    if (analysisData) renderBindings(analysisData);
+    document.getElementById("bindingFilter").focus();
+  } else if (e.target.id === "entityFilter") {
+    entityFilter = e.target.value.toLowerCase();
+    if (analysisData) renderOData(analysisData);
+    document.getElementById("entityFilter").focus();
+  } else if (e.target.id === "logFilterText") {
+    logFilter.text = e.target.value.toLowerCase();
+    if (analysisData) renderLogs(analysisData);
+    document.getElementById("logFilterText").focus();
+  }
+});
+document.getElementById("tabContent").addEventListener("change", (e) => {
+  if (e.target.id === "logFilterLevel") {
+    logFilter.level = parseInt(e.target.value, 10) || 0;
+    if (analysisData) renderLogs(analysisData);
   }
 });
 
@@ -31,6 +67,15 @@ async function runAnalysis() {
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    // Restricted page check
+    if (!tab || !tab.url || /^(chrome|edge|about|chrome-extension|moz-extension):/i.test(tab.url) || tab.url.startsWith("https://chromewebstore.google.com")) {
+      showPlaceholder("tab-overview", "&#128683;", "This page is restricted by the browser. Open a SAPUI5 app and retry.");
+      btn.textContent = "ANALYZE";
+      btn.disabled = false;
+      return;
+    }
+
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       world: "MAIN",
@@ -48,50 +93,7 @@ async function runAnalysis() {
       }
 
       analysisData = data;
-
-      // Version badge
-      if (data._meta?.ui5Version) {
-        const vBadge = document.getElementById("ui5Version");
-        vBadge.textContent = "UI5 " + data._meta.ui5Version;
-        vBadge.hidden = false;
-      }
-
-      // Error banner
-      const banner = document.getElementById("errorBanner");
-      const detailsEl = document.getElementById("errorBannerDetails");
-      if (data._errors && data._errors.length > 0) {
-        document.getElementById("errorBannerText").textContent =
-          data._errors.length + " section(s) had partial errors — click to expand";
-        banner.classList.add("visible");
-        detailsEl.innerHTML = data._errors.map(e =>
-          `<div style="margin-bottom:4px"><strong>${esc(e.section)}</strong>: ${esc(e.error)}</div>`
-        ).join("");
-        // Auto-expand if few errors so user sees them immediately
-        if (data._errors.length <= 3) detailsEl.classList.add("open");
-      } else {
-        banner.classList.remove("visible");
-        detailsEl.classList.remove("open");
-        detailsEl.innerHTML = "";
-      }
-
-      // Render all tabs
-      renderOverview(data);
-      renderComponents(data);
-      renderOData(data);
-      renderBindings(data);
-      renderLogs(data);
-      renderRuntime(data);
-      renderJSON(data);
-
-      // Update badges
-      setBadge("badgeComponents", (data.components || []).length);
-      const odataCount = [...new Set((data.models || []).filter(m => m.odataVersion).map(m => m.serviceUrl))].length;
-      setBadge("badgeOData", odataCount);
-      setBadge("badgeBindings", (data.bindings || []).length);
-      const logCount = (data.messages?.count || 0) + (data.logEntries || []).length;
-      setBadge("badgeLogs", logCount, logCount > 0 ? "warning" : "");
-
-      switchTab("overview");
+      renderAll(data);
     }
   } catch (err) {
     showPlaceholder("tab-overview", "&#9888;", "Error: " + err.message);
@@ -101,10 +103,62 @@ async function runAnalysis() {
   btn.disabled = false;
 }
 
+function renderAll(data) {
+  // Version badge
+  if (data._meta && data._meta.ui5Version) {
+    const vBadge = document.getElementById("ui5Version");
+    vBadge.textContent = "UI5 " + data._meta.ui5Version;
+    vBadge.hidden = false;
+  }
+
+  // Error banner
+  const banner = document.getElementById("errorBanner");
+  const detailsEl = document.getElementById("errorBannerDetails");
+  if (data._errors && data._errors.length > 0) {
+    document.getElementById("errorBannerText").textContent =
+      data._errors.length + " section(s) had partial errors — click to expand";
+    banner.classList.add("visible");
+    detailsEl.innerHTML = data._errors.map(e =>
+      `<div style="margin-bottom:4px"><strong>${esc(e.section)}</strong>: ${esc(e.error)}</div>`
+    ).join("");
+    if (data._errors.length <= 3) detailsEl.classList.add("open");
+  } else {
+    banner.classList.remove("visible");
+    detailsEl.classList.remove("open");
+    detailsEl.innerHTML = "";
+  }
+
+  // Render all tabs
+  renderOverview(data);
+  renderComponents(data);
+  renderOData(data);
+  renderBindings(data);
+  renderRouting(data);
+  renderManifest(data);
+  renderLogs(data);
+  renderPerformance(data);
+  renderRuntime(data);
+  renderJSON(data);
+
+  // Update badges
+  setBadge("badgeComponents", (data.components || []).length);
+  const odataCount = [...new Set((data.models || []).filter(m => m.odataVersion).map(m => m.serviceUrl))].length;
+  setBadge("badgeOData", odataCount);
+  setBadge("badgeBindings", (data.bindings || []).length);
+  const routingCount = (data.routing || []).reduce((s, r) => s + (r.routes || []).length, 0);
+  setBadge("badgeRouting", routingCount);
+  const logCount = ((data.messages && data.messages.count) || 0) + (data.logEntries || []).length;
+  setBadge("badgeLogs", logCount, logCount > 0 ? "warning" : "");
+}
+
 // --- Tab Switching ---
 
 function switchTab(name) {
-  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tab-btn").forEach(b => {
+    const active = b.dataset.tab === name;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", active ? "true" : "false");
+  });
   document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === "tab-" + name));
 }
 
@@ -122,6 +176,13 @@ function renderOverview(data) {
     <div class="stat-box"><div class="stat-number">${(data.models || []).length}</div><div class="stat-label">Models</div></div>
   </div>`;
 
+  // Truncations
+  if (data._truncations && data._truncations.length > 0) {
+    html += data._truncations.map(t =>
+      `<div class="truncation-notice">&#9888; ${esc(t.section)}: showing ${esc(t.shown)} of ${esc(t.total)}</div>`
+    ).join("");
+  }
+
   // Framework card
   if (data.framework) {
     const fw = data.framework;
@@ -130,11 +191,13 @@ function renderOverview(data) {
       : `<span class="status-dot off"></span>OFF`;
     html += card("Framework", `
       ${kvRow("Version", fw.version || "?")}
+      ${fw.buildTimestamp ? kvRow("Build", esc(fw.buildTimestamp)) : ""}
       ${kvRow("Theme", fw.theme || "?")}
       ${kvRow("Language", fw.language || "?")}
       ${kvRow("Debug", debugHtml)}
       ${kvRow("RTL", fw.rtl ? "Yes" : "No")}
       ${fw.accessibility !== null ? kvRow("Accessibility", fw.accessibility ? "Yes" : "No") : ""}
+      ${fw.contentDensity ? kvRow("Density", fw.contentDensity) : ""}
     `);
   }
 
@@ -142,17 +205,58 @@ function renderOverview(data) {
   if (data.app) {
     html += card("Application", `
       ${kvRow("ID", data.app.id || "?")}
+      ${data.app.title ? kvRow("Title", esc(data.app.title)) : ""}
       ${kvRow("Namespace", data.app.namespace || "N/A")}
       ${kvRow("Version", data.app.version || "N/A")}
+      ${data.app.type ? kvRow("Type", esc(data.app.type)) : ""}
+    `);
+  }
+
+  // Fiori Elements
+  if (data.fioriElements && data.fioriElements.isFioriElements) {
+    html += card("Fiori Elements", `
+      ${kvRow("Framework", esc(data.fioriElements.framework || "?"))}
+      ${data.fioriElements.floorplans.length > 0 ? kvRow("Floorplans", data.fioriElements.floorplans.map(f => `<span class="method-tag">${esc(f)}</span>`).join("")) : ""}
+    `);
+  }
+
+  // Control stats
+  if (data.controlStats) {
+    html += card("Controls", `
+      ${kvRow("Total", String(data.controlStats.total))}
+      ${kvRow("Custom", String(data.controlStats.custom))}
+      ${kvRow("Busy", String(data.controlStats.busy))}
     `);
   }
 
   // Launchpad card
   if (data.launchpad) {
-    html += card("Fiori Launchpad", `
-      ${data.launchpad.user ? kvRow("User", data.launchpad.user.name || data.launchpad.user.id) : kvRow("User", "N/A")}
-      ${kvRow("Personalization", data.launchpad.personalization ? "Active" : "Inactive")}
-    `);
+    let lpContent = "";
+    if (data.launchpad.user) {
+      lpContent += kvRow("User", esc(data.launchpad.user.name || data.launchpad.user.id));
+      if (data.launchpad.user.language) lpContent += kvRow("Language", esc(data.launchpad.user.language));
+      if (data.launchpad.user.theme) lpContent += kvRow("Theme", esc(data.launchpad.user.theme));
+    }
+    lpContent += kvRow("Personalization", data.launchpad.personalization ? "Active" : "Inactive");
+    if (data.launchpad.services && data.launchpad.services.length > 0) {
+      lpContent += kvRow("Services", data.launchpad.services.map(s => `<span class="method-tag">${esc(s)}</span>`).join(""));
+    }
+    if (data.launchpad.currentApp) {
+      lpContent += kvRow("Current App Type", esc(data.launchpad.currentApp.applicationType || "?"));
+    }
+    html += card("Fiori Launchpad", lpContent);
+  }
+
+  // Libraries
+  if (data.libraries && data.libraries.length > 0) {
+    let libContent = collapsible(`Loaded Libraries (${data.libraries.length})`, () => {
+      return `<div style="overflow-x:auto"><table class="data-table">
+        <thead><tr><th>Library</th><th>Version</th></tr></thead>
+        <tbody>${data.libraries.map(l =>
+          `<tr><td class="mono">${esc(l.name)}</td><td>${esc(l.version || "?")}</td></tr>`
+        ).join("")}</tbody></table></div>`;
+    });
+    html += `<div class="card"><div class="card-body" style="padding:0">${libContent}</div></div>`;
   }
 
   // URL card
@@ -163,6 +267,7 @@ function renderOverview(data) {
       if (flags.debugActive) urlContent += kvRow("sap-ui-debug", `<span class="msg-error">${esc(flags.debugValue || "true")}</span>`);
       if (flags.themeOverride) urlContent += kvRow("Theme Override", esc(flags.themeOverride));
       if (flags.flexDisabled) urlContent += kvRow("Flex Errors", '<span class="msg-error">Enabled</span>');
+      if (flags.cacheBusterToken) urlContent += kvRow("Cache Buster", esc(flags.cacheBusterToken));
     }
     const paramKeys = Object.keys(data.url.parameters || {});
     if (paramKeys.length > 0) {
@@ -194,8 +299,10 @@ function renderComponents(data) {
     body += kvRow("Type", `<span class="mono">${esc(comp.type)}</span>`);
     body += kvRow("Manifest ID", comp.manifestId ? `<span class="mono">${esc(comp.manifestId)}</span>` : "N/A");
     body += kvRow("Version", comp.manifestVersion || "N/A");
+    if (comp.title) body += kvRow("Title", esc(comp.title));
+    if (comp.appType) body += kvRow("App Type", esc(comp.appType));
+    if (comp.ach) body += kvRow("ACH", esc(comp.ach));
 
-    // Models for this component
     const compModels = (data.models || []).filter(m => m.componentId === comp.id);
     if (compModels.length > 0) {
       body += collapsible(`Models (${compModels.length})`, () => {
@@ -205,13 +312,14 @@ function renderComponents(data) {
           mhtml += kvRow("Name", `<strong>${esc(m.name)}</strong>`);
           mhtml += kvRow("Type", `<span class="mono">${esc(m.type)}</span>`);
           if (m.serviceUrl) mhtml += kvRow("Service URL", `<span class="mono" style="font-size:10px">${esc(m.serviceUrl)}</span>`);
+          if (m.defaultBindingMode) mhtml += kvRow("Mode", esc(m.defaultBindingMode));
+          if (m.hasPendingChanges !== null) mhtml += kvRow("Pending changes", m.hasPendingChanges ? "Yes" : "No");
           mhtml += `</div>`;
         });
         return mhtml;
       });
     }
 
-    // Views for this component
     const compViews = (data.views || []).filter(v => v.componentId === comp.id);
     if (compViews.length > 0) {
       body += collapsible(`Views (${compViews.length})`, () => {
@@ -222,7 +330,6 @@ function renderComponents(data) {
           vhtml += kvRow("Type", `<span class="mono">${esc(v.viewType)}</span>`);
           if (v.controllerName) vhtml += kvRow("Controller", `<span class="mono">${esc(v.controllerName)}</span>`);
 
-          // Custom methods for this view's controller
           const ctrl = (data.controllers || []).find(c => c.viewId === v.viewId);
           if (ctrl && ctrl.customMethods.length > 0) {
             vhtml += `<div style="margin-top:4px"><span class="kv-key">Custom Methods (${ctrl.customMethods.length}):</span></div>`;
@@ -263,6 +370,7 @@ function renderOData(data) {
         entityTypes: m.entityTypes || [],
         entitySets: m.entitySets || [],
         functionImports: m.functionImports || [],
+        annotationUrls: m.annotationUrls || [],
         components: [],
         modelNames: []
       };
@@ -271,16 +379,16 @@ function renderOData(data) {
     if (!svc.components.includes(m.componentId)) svc.components.push(m.componentId);
     const displayName = m.name || "default";
     if (!svc.modelNames.includes(displayName)) svc.modelNames.push(displayName);
-    // Take metadata from whichever model has it loaded
     if (m.metadataLoaded && !svc.metadataLoaded) {
       svc.metadataLoaded = true;
       svc.entityTypes = m.entityTypes || [];
       svc.entitySets = m.entitySets || [];
       svc.functionImports = m.functionImports || [];
+      svc.annotationUrls = m.annotationUrls || [];
     }
   });
 
-  let html = "";
+  let html = `<input type="text" id="entityFilter" class="filter-input" placeholder="Filter entity types/sets…" value="${esc(entityFilter)}" aria-label="Filter entities">`;
 
   for (const url in byUrl) {
     const svc = byUrl[url];
@@ -305,15 +413,27 @@ function renderOData(data) {
     if (svc.modelNames.length > 0) {
       body += kvRow("Model Names", svc.modelNames.map(n => `<span class="method-tag">${esc(n)}</span>`).join(""));
     }
+    if (svc.annotationUrls && svc.annotationUrls.length > 0) {
+      body += kvRow("Annotations", String(svc.annotationUrls.length));
+    }
 
     if (!svc.metadataLoaded) {
       body += `<div style="margin-top:8px;font-size:11px;color:var(--text-light)">Metadata not loaded yet — analyze after the app has fully initialized.</div>`;
     } else {
-      // Entity Types
-      if (svc.entityTypes.length > 0) {
-        body += collapsible(`Entity Types (${svc.entityTypes.length})`, () => {
+      const filteredET = entityFilter
+        ? svc.entityTypes.filter(et => et.name && et.name.toLowerCase().includes(entityFilter))
+        : svc.entityTypes;
+      const filteredES = entityFilter
+        ? svc.entitySets.filter(es => es.name && es.name.toLowerCase().includes(entityFilter))
+        : svc.entitySets;
+      const filteredFI = entityFilter
+        ? svc.functionImports.filter(fi => fi.name && fi.name.toLowerCase().includes(entityFilter))
+        : svc.functionImports;
+
+      if (filteredET.length > 0) {
+        body += collapsible(`Entity Types (${filteredET.length}${filteredET.length !== svc.entityTypes.length ? "/" + svc.entityTypes.length : ""})`, () => {
           let etHtml = "";
-          svc.entityTypes.forEach(et => {
+          filteredET.forEach(et => {
             const propCount = (et.properties || []).length;
             etHtml += collapsible(`${esc(et.name)} (${propCount} prop${propCount !== 1 ? "s" : ""})`, () => {
               if (!et.properties || et.properties.length === 0) return `<div style="font-size:11px;color:var(--text-light)">No properties</div>`;
@@ -337,23 +457,21 @@ function renderOData(data) {
         });
       }
 
-      // Entity Sets
-      if (svc.entitySets.length > 0) {
-        body += collapsible(`Entity Sets (${svc.entitySets.length})`, () => {
+      if (filteredES.length > 0) {
+        body += collapsible(`Entity Sets (${filteredES.length}${filteredES.length !== svc.entitySets.length ? "/" + svc.entitySets.length : ""})`, () => {
           return `<div style="overflow-x:auto"><table class="data-table">
             <thead><tr><th>Entity Set</th><th>Entity Type</th></tr></thead>
-            <tbody>${svc.entitySets.map(es =>
+            <tbody>${filteredES.map(es =>
               `<tr><td><strong>${esc(es.name)}</strong></td><td class="mono" style="font-size:10px">${esc(es.entityType || "")}</td></tr>`
             ).join("")}</tbody></table></div>`;
         });
       }
 
-      // Function Imports
-      if (svc.functionImports.length > 0) {
-        body += collapsible(`Function Imports (${svc.functionImports.length})`, () => {
+      if (filteredFI.length > 0) {
+        body += collapsible(`Function/Action Imports (${filteredFI.length}${filteredFI.length !== svc.functionImports.length ? "/" + svc.functionImports.length : ""})`, () => {
           return `<div style="overflow-x:auto"><table class="data-table">
             <thead><tr><th>Name</th><th>Method</th><th>Return Type</th></tr></thead>
-            <tbody>${svc.functionImports.map(fi =>
+            <tbody>${filteredFI.map(fi =>
               `<tr>
                 <td><strong>${esc(fi.name)}</strong></td>
                 <td class="mono" style="font-size:10px">${esc(fi.httpMethod || "")}</td>
@@ -386,15 +504,24 @@ function renderBindings(data) {
     return;
   }
 
+  // Filter
+  const filtered = bindingFilter
+    ? data.bindings.filter(b =>
+        (b.path && b.path.toLowerCase().includes(bindingFilter)) ||
+        (b.property && b.property.toLowerCase().includes(bindingFilter)) ||
+        (b.controlType && b.controlType.toLowerCase().includes(bindingFilter)))
+    : data.bindings;
+
   // Group by model
   const byModel = {};
-  data.bindings.forEach(b => {
+  filtered.forEach(b => {
     const key = b.model || "default";
     if (!byModel[key]) byModel[key] = [];
     byModel[key].push(b);
   });
 
-  let html = "";
+  let html = `<input type="text" id="bindingFilter" class="filter-input" placeholder="Filter by path, property or control…" value="${esc(bindingFilter)}" aria-label="Filter bindings">`;
+  html += `<div style="font-size:11px;color:var(--text-light);margin-bottom:6px">Showing ${filtered.length} of ${data.bindings.length}</div>`;
 
   for (const modelName in byModel) {
     const items = byModel[modelName];
@@ -405,24 +532,155 @@ function renderBindings(data) {
       </div>
       <div class="card-body" style="padding:0;overflow-x:auto">
         <table class="data-table">
-          <thead><tr><th>Property</th><th>Path</th><th>Control</th></tr></thead>
+          <thead><tr><th>Property</th><th>Path</th><th>Control</th><th>Kind</th></tr></thead>
           <tbody>`;
 
-    const maxShow = 50;
+    const maxShow = 100;
     items.slice(0, maxShow).forEach(b => {
       html += `<tr>
         <td><strong>${esc(b.property)}</strong></td>
         <td class="mono">${esc(b.path)}</td>
         <td class="mono" style="font-size:10px" title="${esc(b.controlId)}">${esc(shortType(b.controlType))}</td>
+        <td style="font-size:10px">${esc(b.kind || "property")}</td>
       </tr>`;
     });
 
     html += `</tbody></table>`;
     if (items.length > maxShow) {
-      html += `<div style="padding:6px 8px;font-size:11px;color:var(--text-light)">Showing ${maxShow} of ${items.length} bindings</div>`;
+      html += `<div style="padding:6px 8px;font-size:11px;color:var(--text-light)">Showing ${maxShow} of ${items.length}</div>`;
     }
     html += `</div></div>`;
   }
+
+  el.innerHTML = html;
+}
+
+// --- Render: Routing ---
+
+function renderRouting(data) {
+  const el = document.getElementById("tab-routing");
+  if (!data.routing || data.routing.length === 0) {
+    el.innerHTML = placeholder("&#128679;", "No routing configuration found");
+    return;
+  }
+
+  let html = "";
+  data.routing.forEach(r => {
+    let body = "";
+    if (r.config) {
+      body += collapsible("Config", () => {
+        let c = "";
+        for (const k in r.config) {
+          c += kvRow(esc(k), `<span class="mono" style="font-size:10px">${esc(typeof r.config[k] === "object" ? JSON.stringify(r.config[k]) : r.config[k])}</span>`);
+        }
+        return c;
+      });
+    }
+    if (r.currentHash != null) body += kvRow("Current Hash", `<span class="mono">${esc(r.currentHash || "(empty)")}</span>`);
+    if (r.currentRoute) body += kvRow("Current Route", `<strong>${esc(r.currentRoute)}</strong>`);
+
+    if (r.routes && r.routes.length > 0) {
+      body += `<div style="margin-top:6px;font-weight:600;font-size:11px;color:var(--text-light)">ROUTES (${r.routes.length})</div>`;
+      body += `<div style="overflow-x:auto"><table class="data-table">
+        <thead><tr><th>Name</th><th>Pattern</th><th>Target</th></tr></thead>
+        <tbody>${r.routes.map(rt =>
+          `<tr>
+            <td><strong>${esc(rt.name || "")}</strong></td>
+            <td class="mono" style="font-size:10px">${esc(rt.pattern || "")}</td>
+            <td class="mono" style="font-size:10px">${esc(rt.target || "")}</td>
+          </tr>`
+        ).join("")}</tbody></table></div>`;
+    }
+    if (r.targets && r.targets.length > 0) {
+      body += `<div style="margin-top:8px;font-weight:600;font-size:11px;color:var(--text-light)">TARGETS (${r.targets.length})</div>`;
+      body += `<div style="overflow-x:auto"><table class="data-table">
+        <thead><tr><th>Name</th><th>View</th><th>Type</th></tr></thead>
+        <tbody>${r.targets.map(t =>
+          `<tr>
+            <td><strong>${esc(t.name)}</strong></td>
+            <td class="mono" style="font-size:10px">${esc(t.viewName || "")}</td>
+            <td class="mono" style="font-size:10px">${esc(t.viewType || "")}</td>
+          </tr>`
+        ).join("")}</tbody></table></div>`;
+    }
+
+    html += card(esc(r.componentId), body);
+  });
+
+  el.innerHTML = html;
+}
+
+// --- Render: Manifest ---
+
+function renderManifest(data) {
+  const el = document.getElementById("tab-manifest");
+  if (!data.manifestSnapshots || data.manifestSnapshots.length === 0) {
+    el.innerHTML = placeholder("&#128221;", "No manifest available");
+    return;
+  }
+
+  let html = "";
+  data.manifestSnapshots.forEach(ms => {
+    let body = "";
+    body += kvRow("ID", `<span class="mono">${esc(ms.sapApp.id || "?")}</span>`);
+    if (ms.sapApp.title) body += kvRow("Title", esc(ms.sapApp.title));
+    if (ms.sapApp.type) body += kvRow("Type", esc(ms.sapApp.type));
+    if (ms.sapApp.ach) body += kvRow("ACH", esc(ms.sapApp.ach));
+
+    // Data sources
+    const dsKeys = Object.keys(ms.sapApp.dataSources || {});
+    if (dsKeys.length > 0) {
+      body += collapsible(`Data Sources (${dsKeys.length})`, () => {
+        let h = `<div style="overflow-x:auto"><table class="data-table">
+          <thead><tr><th>Name</th><th>Type</th><th>URI</th></tr></thead><tbody>`;
+        dsKeys.forEach(k => {
+          const ds = ms.sapApp.dataSources[k];
+          h += `<tr>
+            <td><strong>${esc(k)}</strong></td>
+            <td>${esc(ds.type || "")}</td>
+            <td class="mono" style="font-size:10px">${esc(ds.uri || "")}</td>
+          </tr>`;
+        });
+        h += `</tbody></table></div>`;
+        return h;
+      });
+    }
+
+    // Dependencies
+    if (ms.sapUi5.dependencies && ms.sapUi5.dependencies.libs) {
+      const libNames = Object.keys(ms.sapUi5.dependencies.libs);
+      body += collapsible(`Declared Libraries (${libNames.length})`, () => {
+        return libNames.map(n => `<div class="mono" style="font-size:10px;padding:2px 0">${esc(n)}${ms.sapUi5.dependencies.libs[n].minVersion ? " &middot; min " + esc(ms.sapUi5.dependencies.libs[n].minVersion) : ""}</div>`).join("");
+      });
+    }
+
+    // Component usages
+    if (ms.sapUi5.componentUsages) {
+      const usages = Object.keys(ms.sapUi5.componentUsages);
+      if (usages.length > 0) {
+        body += collapsible(`Component Usages (${usages.length})`, () => {
+          return usages.map(u => `<div class="mono" style="font-size:10px;padding:2px 0">${esc(u)} → ${esc(ms.sapUi5.componentUsages[u].name || "")}</div>`).join("");
+        });
+      }
+    }
+
+    // sap.fiori
+    if (ms.sapFiori) {
+      body += collapsible("sap.fiori", () => {
+        let h = "";
+        if (ms.sapFiori.registrationIds) h += kvRow("Registration IDs", `<span class="mono" style="font-size:10px">${esc(JSON.stringify(ms.sapFiori.registrationIds))}</span>`);
+        if (ms.sapFiori.archeType) h += kvRow("Archetype", esc(ms.sapFiori.archeType));
+        return h || `<div style="font-size:11px;color:var(--text-light)">No fields</div>`;
+      });
+    }
+
+    // Full manifest JSON
+    body += collapsible("Full manifest.json", () => {
+      return `<pre class="mono" style="font-size:10px;white-space:pre-wrap;word-break:break-all;max-height:300px;overflow:auto;background:#fafbfc;padding:8px;border-radius:4px">${esc(JSON.stringify(ms.full, null, 2))}</pre>`;
+    });
+
+    html += card(esc(ms.componentId), body);
+  });
 
   el.innerHTML = html;
 }
@@ -432,6 +690,18 @@ function renderBindings(data) {
 function renderLogs(data) {
   const el = document.getElementById("tab-logs");
   let html = "";
+
+  // Filter bar
+  html += `<div style="display:flex;gap:6px;margin-bottom:8px">
+    <select id="logFilterLevel" class="filter-input" style="flex:0 0 120px;margin-bottom:0" aria-label="Filter log level">
+      <option value="0"${logFilter.level === 0 ? " selected" : ""}>All levels</option>
+      <option value="1"${logFilter.level === 1 ? " selected" : ""}>Fatal</option>
+      <option value="2"${logFilter.level === 2 ? " selected" : ""}>Error+</option>
+      <option value="3"${logFilter.level === 3 ? " selected" : ""}>Warning+</option>
+      <option value="4"${logFilter.level === 4 ? " selected" : ""}>Info+</option>
+    </select>
+    <input type="text" id="logFilterText" class="filter-input" style="flex:1;margin-bottom:0" placeholder="Filter text…" value="${esc(logFilter.text)}" aria-label="Filter log text">
+  </div>`;
 
   // Messages
   if (data.messages && data.messages.count > 0) {
@@ -450,13 +720,29 @@ function renderLogs(data) {
     html += `</tbody></table></div></div>`;
   }
 
-  // Log entries
-  if (data.logEntries && data.logEntries.length > 0) {
+  // Deprecations
+  if (data.deprecations && data.deprecations.length > 0) {
     html += `<div class="card"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-      <span>Log Entries</span><span class="badge">${data.logEntries.length}</span>
+      <span>Deprecation Warnings</span><span class="badge warning">${data.deprecations.length}</span>
+    </div><div class="card-body" style="padding:0">
+      <table class="data-table"><thead><tr><th>Message</th></tr></thead><tbody>`;
+    data.deprecations.slice(0, 30).forEach(e => {
+      html += `<tr><td style="font-size:11px">${esc(e.message || "")}</td></tr>`;
+    });
+    html += `</tbody></table></div></div>`;
+  }
+
+  // Log entries (filtered)
+  let entries = data.logEntries || [];
+  if (logFilter.level > 0) entries = entries.filter(e => e.level <= logFilter.level);
+  if (logFilter.text) entries = entries.filter(e => (e.message || "").toLowerCase().includes(logFilter.text));
+
+  if (entries.length > 0) {
+    html += `<div class="card"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+      <span>Log Entries</span><span class="badge">${entries.length}${entries.length !== (data.logEntries || []).length ? "/" + (data.logEntries || []).length : ""}</span>
     </div><div class="card-body" style="padding:0">
       <table class="data-table"><thead><tr><th>Level</th><th>Message</th><th>Component</th></tr></thead><tbody>`;
-    data.logEntries.forEach(e => {
+    entries.forEach(e => {
       const cls = logLevelClass(e.level);
       html += `<tr>
         <td class="${cls}"><strong>${logLevelName(e.level)}</strong></td>
@@ -467,10 +753,64 @@ function renderLogs(data) {
     html += `</tbody></table></div></div>`;
   }
 
-  if (!html) {
-    html = placeholder("&#128220;", "No messages or log entries");
+  if (!data.messages?.count && entries.length === 0 && !(data.deprecations && data.deprecations.length)) {
+    html += placeholder("&#128220;", "No messages or log entries");
   }
 
+  el.innerHTML = html;
+}
+
+// --- Render: Performance ---
+
+function renderPerformance(data) {
+  const el = document.getElementById("tab-performance");
+  if (!data.performance) {
+    el.innerHTML = placeholder("&#9201;", "No performance data");
+    return;
+  }
+  const p = data.performance;
+  let html = "";
+
+  if (p.navigationTiming) {
+    html += card("Page Load", `
+      ${kvRow("DOMContentLoaded", p.navigationTiming.domContentLoadedMs + " ms")}
+      ${kvRow("Load Event", p.navigationTiming.loadEventMs + " ms")}
+      ${kvRow("Transfer Size", p.navigationTiming.transferSizeKB + " KB")}
+    `);
+  }
+
+  if (p.memory) {
+    html += card("Memory (Chrome only)", `
+      ${kvRow("JS Heap Used", p.memory.usedHeapMB + " MB")}
+      ${kvRow("JS Heap Total", p.memory.totalHeapMB + " MB")}
+    `);
+  }
+
+  if (p.odataRequests) {
+    let body = `${kvRow("Requests", String(p.odataRequests.count))}
+      ${kvRow("Total Size", p.odataRequests.totalSizeKB + " KB")}
+      ${kvRow("Avg Duration", p.odataRequests.avgDurationMs + " ms")}`;
+    if (p.odataRequests.slowest && p.odataRequests.slowest.length > 0) {
+      body += `<div style="margin-top:6px;font-size:11px;color:var(--text-light)">Slowest:</div>`;
+      body += `<div style="overflow-x:auto"><table class="data-table">
+        <thead><tr><th>URL</th><th>ms</th><th>KB</th></tr></thead><tbody>${p.odataRequests.slowest.map(s =>
+          `<tr><td class="mono" style="font-size:10px;max-width:300px">${esc(s.url)}</td><td>${s.durationMs}</td><td>${s.sizeKB}</td></tr>`
+        ).join("")}</tbody></table></div>`;
+    }
+    html += card("OData Requests", body);
+  }
+
+  if (p.measurements && p.measurements.length > 0) {
+    html += card(`UI5 Measurements (${p.measurements.length})`,
+      `<div style="overflow-x:auto"><table class="data-table">
+        <thead><tr><th>ID</th><th>Duration</th></tr></thead>
+        <tbody>${p.measurements.map(m =>
+          `<tr><td class="mono" style="font-size:10px">${esc(m.id)}</td><td>${m.duration ?? ""} ms</td></tr>`
+        ).join("")}</tbody></table></div>`
+    );
+  }
+
+  if (!html) html = placeholder("&#9201;", "No performance data captured");
   el.innerHTML = html;
 }
 
@@ -480,7 +820,6 @@ function renderRuntime(data) {
   const el = document.getElementById("tab-runtime");
   let html = "";
 
-  // Device
   if (data.runtime) {
     const r = data.runtime;
     let deviceContent = "";
@@ -497,19 +836,29 @@ function renderRuntime(data) {
     if (r.orientation) {
       deviceContent += kvRow("Orientation", r.orientation.landscape ? "Landscape" : "Portrait");
     }
-    html += card("Device", deviceContent);
+    html += card("Device (page UA)", deviceContent);
   }
 
-  // Theming
   if (data.theming) {
     let thContent = "";
     thContent += kvRow("Theme", data.theming.theme || "?");
     thContent += kvRow("RTL", data.theming.rtl ? "Yes" : "No");
-    if (data.theming.fonts) thContent += kvRow("Fonts", esc(JSON.stringify(data.theming.fonts)));
+    if (data.theming.contentDensity) thContent += kvRow("Density", data.theming.contentDensity);
+    if (data.theming.fonts) {
+      const fonts = typeof data.theming.fonts === "object" ? Object.values(data.theming.fonts).join(", ") : String(data.theming.fonts);
+      thContent += kvRow("Fonts", esc(fonts));
+    }
     html += card("Theming", thContent);
   }
 
-  // Fragments
+  if (data.loader) {
+    html += card("Loader", `
+      ${kvRow("Async", data.loader.async ? "Yes" : "No")}
+      ${data.loader.paths !== null ? kvRow("Custom paths", String(data.loader.paths)) : ""}
+      ${data.loader.modulesCount !== null ? kvRow("Loaded modules", String(data.loader.modulesCount)) : ""}
+    `);
+  }
+
   if (data.fragments && data.fragments.length > 0) {
     let fragContent = "";
     data.fragments.forEach(f => {
@@ -518,7 +867,6 @@ function renderRuntime(data) {
     html += card(`Fragments (${data.fragments.length})`, fragContent);
   }
 
-  // Resources
   if (data.resources) {
     let resContent = "";
     if (data.resources.scripts.length > 0) {
@@ -536,7 +884,6 @@ function renderRuntime(data) {
     if (resContent) html += card("UI5 Resources", resContent);
   }
 
-  // Icons
   if (data.icons && data.icons.length > 0) {
     html += card(`Icons Used (${data.icons.length})`,
       `<div>${data.icons.map(i => `<span class="method-tag">${esc(i)}</span>`).join("")}</div>`
@@ -553,23 +900,87 @@ function renderJSON(data) {
   document.getElementById("jsonOutput").textContent = JSON.stringify(data, null, 2);
 }
 
-// --- Copy ---
+// --- Copy / Export ---
 
 function copyJSON() {
   const text = document.getElementById("jsonOutput").textContent;
   navigator.clipboard.writeText(text).then(() => {
     const btn = document.getElementById("copyBtn");
     btn.textContent = "COPIED!";
-    btn.style.background = "var(--success)";
-    btn.style.color = "white";
-    btn.style.borderColor = "var(--success)";
-    setTimeout(() => {
-      btn.textContent = "COPY JSON";
-      btn.style.background = "";
-      btn.style.color = "";
-      btn.style.borderColor = "";
-    }, 1500);
+    setTimeout(() => { btn.textContent = "COPY JSON"; }, 1500);
   });
+}
+
+function downloadJSON() {
+  if (!analysisData) return;
+  const blob = new Blob([JSON.stringify(analysisData, null, 2)], { type: "application/json" });
+  triggerDownload(blob, "sapui5-analysis-" + Date.now() + ".json");
+}
+
+function downloadHTML() {
+  if (!analysisData) return;
+  const json = JSON.stringify(analysisData, null, 2);
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>SAPUI5 Explorer Report</title>
+<style>
+body{font-family:'Segoe UI',sans-serif;max-width:1100px;margin:20px auto;padding:0 20px;color:#333}
+h1{color:#0070f2}h2{border-bottom:2px solid #0070f2;padding-bottom:4px;margin-top:30px}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:12px}
+th,td{border:1px solid #dee2e6;padding:6px;text-align:left}th{background:#f4f7f9}
+pre{background:#f4f7f9;padding:12px;border-radius:6px;overflow:auto;font-size:11px;max-height:600px}
+.kv{display:grid;grid-template-columns:200px 1fr;gap:4px;margin:4px 0}
+.label{color:#666;font-weight:600}
+</style></head><body>
+<h1>SAPUI5 Explorer Report</h1>
+<p>Generated: ${new Date().toISOString()}</p>
+<p>UI5 Version: <strong>${esc(analysisData._meta?.ui5Version || "?")}</strong></p>
+<p>URL: <code>${esc(analysisData.url?.fullUrl || "")}</code></p>
+
+<h2>Components (${(analysisData.components || []).length})</h2>
+<table><tr><th>ID</th><th>Type</th><th>Manifest ID</th><th>Version</th></tr>
+${(analysisData.components || []).map(c =>
+  `<tr><td>${esc(c.id)}</td><td>${esc(c.type)}</td><td>${esc(c.manifestId || "")}</td><td>${esc(c.manifestVersion || "")}</td></tr>`
+).join("")}
+</table>
+
+<h2>OData Models (${(analysisData.models || []).filter(m => m.odataVersion).length})</h2>
+<table><tr><th>Name</th><th>Version</th><th>Service URL</th><th>Loaded</th></tr>
+${(analysisData.models || []).filter(m => m.odataVersion).map(m =>
+  `<tr><td>${esc(m.name)}</td><td>${esc(m.odataVersion)}</td><td>${esc(m.serviceUrl || "")}</td><td>${m.metadataLoaded ? "Yes" : "No"}</td></tr>`
+).join("")}
+</table>
+
+<h2>Bindings (${(analysisData.bindings || []).length})</h2>
+<table><tr><th>Property</th><th>Path</th><th>Model</th><th>Control</th></tr>
+${(analysisData.bindings || []).slice(0, 500).map(b =>
+  `<tr><td>${esc(b.property)}</td><td><code>${esc(b.path)}</code></td><td>${esc(b.model)}</td><td>${esc(b.controlType)}</td></tr>`
+).join("")}
+</table>
+
+<h2>Routing</h2>
+${(analysisData.routing || []).map(r => `
+  <h3>${esc(r.componentId)}</h3>
+  <table><tr><th>Route</th><th>Pattern</th><th>Target</th></tr>
+  ${(r.routes || []).map(rt => `<tr><td>${esc(rt.name)}</td><td><code>${esc(rt.pattern)}</code></td><td>${esc(rt.target)}</td></tr>`).join("")}
+  </table>
+`).join("")}
+
+<h2>Full JSON</h2>
+<pre>${esc(json)}</pre>
+</body></html>`;
+  const blob = new Blob([html], { type: "text/html" });
+  triggerDownload(blob, "sapui5-report-" + Date.now() + ".html");
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // --- Utility Functions ---
@@ -635,9 +1046,9 @@ function msgClass(type) {
 }
 
 function logLevelClass(level) {
-  if (level === 1) return "msg-error";   // FATAL
-  if (level === 2) return "msg-error";   // ERROR
-  if (level === 3) return "msg-warning"; // WARNING
+  if (level === 1) return "msg-error";
+  if (level === 2) return "msg-error";
+  if (level === 3) return "msg-warning";
   return "";
 }
 

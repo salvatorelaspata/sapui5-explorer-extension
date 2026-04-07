@@ -8,23 +8,31 @@
   --warning: #e9730c;
   --bg: #f4f7f9;
   --card-bg: #ffffff;
+  --soft-bg: var(--soft-bg);
+  --row-border: var(--row-border);
   --text: #333333;
   --text-light: #666666;
   --border: #dee2e6;
   --shadow: 0 1px 3px rgba(0,0,0,0.12);
   --radius: 6px;
+  --tag-bg: #e3f0ff;
+  --tag-fg: #0070f2;
+  --error-bg: #fff0f0;
+  --error-border: #ffcccc;
+  --warning-bg: #fff8ec;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
   font-family: '72', 'Segoe UI', -apple-system, sans-serif;
-  width: 480px;
+  width: 560px;
   background: var(--bg);
   color: var(--text);
   font-size: 13px;
   line-height: 1.4;
 }
+
 
 /* --- Header --- */
 
@@ -60,7 +68,7 @@ body {
 
 .analyze-bar {
   padding: 10px 16px;
-  background: white;
+  background: var(--card-bg);
   border-bottom: 1px solid var(--border);
 }
 
@@ -83,8 +91,8 @@ body {
 /* --- Error Banner --- */
 
 .error-banner {
-  background: #fff0f0;
-  border-bottom: 1px solid #ffcccc;
+  background: var(--error-bg);
+  border-bottom: 1px solid var(--error-border);
   padding: 8px 16px;
   font-size: 12px;
   color: var(--error);
@@ -102,8 +110,8 @@ body {
   font-size: 11px;
   color: var(--text-light);
   padding: 4px 16px 8px;
-  background: #fff0f0;
-  border-bottom: 1px solid #ffcccc;
+  background: var(--error-bg);
+  border-bottom: 1px solid var(--error-border);
   display: none;
 }
 
@@ -113,17 +121,20 @@ body {
 
 .tab-bar {
   display: flex;
-  background: white;
+  background: var(--card-bg);
   border-bottom: 2px solid var(--border);
   overflow-x: auto;
-  scrollbar-width: none;
+
+  /*scrollbar-width: thin;*/
+  overflow-y: hidden;
 }
 
-.tab-bar::-webkit-scrollbar { display: none; }
+.tab-bar::-webkit-scrollbar { height: 4px; }
+.tab-bar::-webkit-scrollbar-thumb { background: #ccc; border-radius: 2px; }
 
 .tab-btn {
   flex: 0 0 auto;
-  padding: 8px 14px;
+  padding: 8px 11px;
   border: none;
   background: none;
   cursor: pointer;
@@ -162,7 +173,7 @@ body {
   color: var(--text-light);
 }
 
-.badge.primary { background: #e3f0ff; color: var(--primary); }
+.badge.primary { background: var(--tag-bg); color: var(--tag-fg); }
 .badge.error { background: #ffe0e0; color: var(--error); }
 .badge.success { background: #e0f5e9; color: var(--success); }
 .badge.warning { background: #fff3e0; color: var(--warning); }
@@ -190,7 +201,7 @@ body {
   color: var(--text-light);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  background: #fafbfc;
+  background: var(--soft-bg);
   border-bottom: 1px solid var(--border);
 }
 
@@ -203,7 +214,7 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 4px 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--row-border);
 }
 
 .kv-row:last-child { border-bottom: none; }
@@ -225,7 +236,7 @@ body {
 
 /* --- Collapsible --- */
 
-.collapsible { border-bottom: 1px solid #f0f0f0; }
+.collapsible { border-bottom: 1px solid var(--row-border); }
 .collapsible:last-child { border-bottom: none; }
 
 .collapsible-header {
@@ -240,7 +251,7 @@ body {
   transition: background 0.15s;
 }
 
-.collapsible-header:hover { background: #f8f9fa; }
+.collapsible-header:hover { background: var(--soft-bg); }
 
 .collapsible-chevron {
   font-size: 10px;
@@ -291,16 +302,16 @@ body {
   font-weight: 600;
   color: var(--text-light);
   border-bottom: 1px solid var(--border);
-  background: #fafbfc;
+  background: var(--soft-bg);
 }
 
 .data-table td {
   padding: 5px 8px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--row-border);
   word-break: break-all;
 }
 
-.data-table tr:nth-child(even) td { background: #fafbfc; }
+.data-table tr:nth-child(even) td { background: var(--soft-bg); }
 
 .mono { font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 11px; }
 
@@ -308,8 +319,8 @@ body {
 
 .method-tag {
   display: inline-block;
-  background: #e3f0ff;
-  color: var(--primary);
+  background: var(--tag-bg);
+  color: var(--tag-fg);
   padding: 2px 6px;
   border-radius: 3px;
   font-size: 11px;
@@ -333,7 +344,7 @@ body {
   max-height: 500px;
   overflow-y: auto;
   padding: 12px;
-  background: #fafbfc;
+  background: var(--soft-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
@@ -352,7 +363,7 @@ body {
   transition: all 0.2s;
 }
 
-#copyBtn:hover { background: #f0f0f0; }
+#copyBtn:hover { background: var(--row-border); }
 
 /* --- Placeholder --- */
 
@@ -372,9 +383,83 @@ body {
 .msg-success { color: var(--success); }
 .msg-info { color: var(--primary); }
 
+/* --- Filter Input --- */
+
+.filter-input {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  background: var(--card-bg);
+  color: var(--text);
+  font-family: inherit;
+}
+
+.filter-input:focus { outline: none; border-color: var(--primary); }
+
+/* --- Secondary button & action row --- */
+
+.action-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.secondary-btn {
+  flex: 1;
+  padding: 8px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: 12px;
+  background: var(--card-bg);
+  color: var(--text);
+  transition: all 0.2s;
+}
+
+.secondary-btn:hover { background: var(--row-border); }
+
+/* --- Truncation notice --- */
+
+.truncation-notice {
+  font-size: 11px;
+  color: var(--warning);
+  padding: 4px 8px;
+  background: var(--warning-bg);
+  border-left: 3px solid var(--warning);
+  margin: 4px 0;
+}
+
 /* --- Scrollbar --- */
 
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #aaa; }
+
+/* --- Dark mode (variables-only override) --- */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1e1e;
+    --card-bg: #2a2a2a;
+    --soft-bg: #232323;
+    --row-border: #333333;
+    --text: #e0e0e0;
+    --text-light: #999999;
+    --border: #3a3a3a;
+    --shadow: 0 1px 3px rgba(0,0,0,0.4);
+    --tag-bg: #1f3a5a;
+    --tag-fg: #6db3ff;
+    --error-bg: #3a1f1f;
+    --error-border: #5a2a2a;
+    --warning-bg: #3a2f1a;
+  }
+  .badge { background: #3a3a3a; color: #bbbbbb; }
+  .badge.warning { background: #4a3520; color: #ffb366; }
+  ::-webkit-scrollbar-thumb { background: #555; }
+  ::-webkit-scrollbar-thumb:hover { background: #777; }
+}

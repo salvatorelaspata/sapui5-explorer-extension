@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SAPUI5 Explorer",
-  "description": "Analyze SAPUI5/OpenUI5 applications: components, models, odata, bindings, views, controllers, logs and runtime info.",
-  "version": "1.1",
+  "description": "Analyze SAPUI5/OpenUI5 apps: components, models, OData, bindings, routing, manifest, performance, logs. UI5 1.71+ and 2.x.",
+  "version": "1.2",
   "permissions": ["scripting", "activeTab"],
   "action": {
     "default_popup": "popup.html",
